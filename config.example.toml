@@ -1,0 +1,14 @@
+consume_key = ""
+consume_key_secret = ""
+access_token = ""
+access_token_secret = ""
+
+language = "ja"
+
+[tweet_file]
+path = "./data/tweets/tweets.txt"
+max_size = 1000 # megabytes
+
+[reply_file]
+path = "./data/replies/replies.txt"
+max_size = 1000 # megabytes
