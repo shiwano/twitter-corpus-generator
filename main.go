@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"log"
 )
 
@@ -11,6 +10,7 @@ func main() {
 	var verbose bool
 	flag.BoolVar(&verbose, "v", false, "show tweets on stdout")
 	flag.Parse()
+	log.SetFlags(log.Ldate | log.Ltime)
 
 	c, err := loadConfig("./config.toml")
 	if err != nil {
@@ -27,8 +27,8 @@ func main() {
 	go func() {
 		for reply := range stream.replies {
 			if verbose {
-				fmt.Println("Reply1: ", reply.inReplyTo.text)
-				fmt.Println("Reply2: ", reply.tweet.text)
+				log.Println("Reply1: ", reply.inReplyTo.text)
+				log.Println("Reply2: ", reply.tweet.text)
 			}
 			writer.writeReply(reply)
 		}
@@ -36,7 +36,7 @@ func main() {
 
 	for tweet := range stream.tweets {
 		if verbose {
-			fmt.Println("Tweet: ", tweet.text)
+			log.Println("Tweet: ", tweet.text)
 		}
 		writer.writeTweet(tweet)
 	}

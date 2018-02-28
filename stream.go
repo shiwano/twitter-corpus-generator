@@ -82,7 +82,7 @@ func (s *tweetStream) processReplies(ctx context.Context) {
 			return
 		case <-resetTicker.C:
 			statusLookupCallCount = 0
-			log.Println("reset the status lookup API limitation")
+			log.Println("reset status lookup API limitation")
 		case t := <-s.tweetsForReplies:
 			replyTweets[replyTweetsCount] = t
 			replyTweetsCount++
@@ -97,6 +97,7 @@ func (s *tweetStream) processReplies(ctx context.Context) {
 						s.replies <- r
 					}
 					statusLookupCallCount++
+					log.Println("call status lookup API", statusLookupCallCount)
 				}
 			}
 		}
