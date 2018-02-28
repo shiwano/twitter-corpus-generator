@@ -36,7 +36,6 @@ func newTweet(t *twitter.Tweet) tweet {
 type tweetStream struct {
 	stream           *twitter.Stream
 	client           *twitter.Client
-	lookupParams     *twitter.StatusLookupParams
 	tweetsForReplies chan tweet
 
 	replies chan reply
@@ -50,7 +49,8 @@ func (s *tweetStream) makeReplies(tweets []tweet) []reply {
 		inReplyToStatusIDs[i] = t.inReplyToStatusID
 		tweetsByInReplyToStatusID[t.inReplyToStatusID] = t
 	}
-	inReplyToRawTweets, _, err := s.client.Statuses.Lookup(inReplyToStatusIDs, s.lookupParams)
+	lookupParams := &twitter.StatusLookupParams{TrimUser: twitter.Bool(true)}
+	inReplyToRawTweets, _, err := s.client.Statuses.Lookup(inReplyToStatusIDs, lookupParams)
 	if err != nil {
 		log.Println(err)
 		return nil
@@ -147,11 +147,9 @@ func newTweetStream(ctx context.Context, language, consumeKey, consumeKeySecret,
 		return nil, err
 	}
 
-	lookupParams := &twitter.StatusLookupParams{TrimUser: twitter.Bool(true)}
 	s := &tweetStream{
 		stream:           stream,
 		client:           client,
-		lookupParams:     lookupParams,
 		tweetsForReplies: make(chan tweet, 1000),
 
 		replies: make(chan reply),
