@@ -3,13 +3,27 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 )
 
+const version = "1.0.0"
+
 func main() {
-	var verbose bool
-	flag.BoolVar(&verbose, "v", false, "show tweets on stdout")
+	var (
+		verboseFlag bool
+		versionFlag bool
+	)
+	flag.BoolVar(&verboseFlag, "verbose", false, "show tweets on stdout")
+	flag.BoolVar(&versionFlag, "v", false, "show version")
+	flag.BoolVar(&versionFlag, "version", false, "show version")
 	flag.Parse()
+
+	if versionFlag {
+		fmt.Println(version)
+		return
+	}
+
 	log.SetFlags(log.Ldate | log.Ltime)
 
 	c, err := loadConfig("./config.toml")
@@ -26,7 +40,7 @@ func main() {
 
 	go func() {
 		for reply := range stream.replies {
-			if verbose {
+			if verboseFlag {
 				log.Println("Reply1: ", reply.inReplyTo.text)
 				log.Println("Reply2: ", reply.tweet.text)
 			}
@@ -35,7 +49,7 @@ func main() {
 	}()
 
 	for tweet := range stream.tweets {
-		if verbose {
+		if verboseFlag {
 			log.Println("Tweet: ", tweet.text)
 		}
 		writer.writeTweet(tweet)
