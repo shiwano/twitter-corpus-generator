@@ -1,6 +1,6 @@
 # twitter-corpus-generator
 
-Twitter corpus generator written in Go, it generates sample streaming tweets and in-reply-to tweets data.  
+Twitter corpus generator written in Go, it generates sample streaming tweets and in-reply-to tweets data with automatic file rotation.
 
 ## Getting Started
 
