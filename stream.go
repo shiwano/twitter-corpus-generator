@@ -67,6 +67,8 @@ func (s *tweetStream) makeReplies(tweets []tweet) []reply {
 }
 
 func (s *tweetStream) processReplies(ctx context.Context) {
+	defer close(s.replies)
+
 	statusLookupCallCount := 0
 	replyTweets := make([]tweet, statusLookupMaxTweetCount)
 	replyTweetsCount := 0
@@ -77,10 +79,10 @@ func (s *tweetStream) processReplies(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			close(s.replies)
 			return
 		case <-resetTicker.C:
 			statusLookupCallCount = 0
+			log.Println("reset the status lookup API limitation")
 		case t := <-s.tweetsForReplies:
 			replyTweets[replyTweetsCount] = t
 			replyTweetsCount++
@@ -102,10 +104,11 @@ func (s *tweetStream) processReplies(ctx context.Context) {
 }
 
 func (s *tweetStream) processTweets(ctx context.Context) {
+	defer close(s.replies)
+
 	for {
 		select {
 		case <-ctx.Done():
-			close(s.replies)
 			return
 		case m := <-s.stream.Messages:
 			if rawTweet, ok := m.(*twitter.Tweet); ok {
@@ -119,7 +122,7 @@ func (s *tweetStream) processTweets(ctx context.Context) {
 					select {
 					case s.tweetsForReplies <- t:
 					default:
-						log.Println("replies channel is full")
+						log.Println("tweetsForReplies channel is full")
 					}
 				}
 			} else if err := m.(error); ok {
