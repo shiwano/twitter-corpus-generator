@@ -7,13 +7,13 @@ import (
 	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 )
 
-type tweetWriter struct {
+type writer struct {
 	tweets  *lumberjack.Logger
 	dialogs *lumberjack.Logger
 }
 
-func newTweetWriter(tweetFile, dialogFile fileConfig) *tweetWriter {
-	return &tweetWriter{
+func newWriter(tweetFile, dialogFile fileConfig) *writer {
+	return &writer{
 		tweets: &lumberjack.Logger{
 			Filename: tweetFile.Path,
 			MaxSize:  tweetFile.MaxSize,
@@ -25,12 +25,12 @@ func newTweetWriter(tweetFile, dialogFile fileConfig) *tweetWriter {
 	}
 }
 
-func (w *tweetWriter) writeTweet(t tweet) error {
+func (w *writer) writeTweet(t tweet) error {
 	_, err := io.WriteString(w.tweets, t.text+"\n")
 	return err
 }
 
-func (w *tweetWriter) writeDialog(d dialog) error {
+func (w *writer) writeDialog(d dialog) error {
 	texts := make([]string, len(d.tweets))
 	for i, t := range d.tweets {
 		texts[len(d.tweets)-(i+1)] = t.text

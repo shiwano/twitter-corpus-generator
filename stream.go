@@ -14,56 +14,16 @@ const statusLookupMaxTweetCount = 100
 const statusLookupMaxCallCount = 60
 const statusLookupResetDuration = 16 * time.Minute
 
-type dialog struct {
-	tweets []tweet // order by tweeted at.
-}
-
-func (d *dialog) isFinished() bool {
-	return d.lastTweet().inReplyToStatusID <= 0
-}
-
-func (d *dialog) firstTweet() tweet {
-	return d.tweets[0]
-}
-
-func (d *dialog) lastTweet() tweet {
-	return d.tweets[len(d.tweets)-1]
-}
-
-func (d *dialog) countUserIDs() int {
-	userIDs := make(map[int64]struct{})
-	for _, t := range d.tweets {
-		userIDs[t.userID] = struct{}{}
-	}
-	return len(userIDs)
-}
-
-type tweet struct {
-	id                int64
-	userID            int64
-	text              string
-	inReplyToStatusID int64
-}
-
-func newTweet(t *twitter.Tweet) tweet {
-	return tweet{
-		id:                t.ID,
-		userID:            t.User.ID,
-		text:              normalizeText(t.Text),
-		inReplyToStatusID: t.InReplyToStatusID,
-	}
-}
-
-type tweetStream struct {
-	stream           *twitter.Stream
-	client           *twitter.Client
-	tweetsForDialogs chan tweet
+type stream struct {
+	stream       *twitter.Stream
+	client       *twitter.Client
+	dialogTweets chan tweet
 
 	dialogs chan dialog
 	tweets  chan tweet
 }
 
-func (s *tweetStream) makeDialogs(tweets []tweet) []dialog {
+func (s *stream) makeDialogs(tweets []tweet) []dialog {
 	tweetsByInReplyToStatusID := make(map[int64]tweet)
 	inReplyToStatusIDs := make([]int64, len(tweets))
 	for i, t := range tweets {
@@ -76,19 +36,19 @@ func (s *tweetStream) makeDialogs(tweets []tweet) []dialog {
 		log.Println(err)
 		return nil
 	}
-	var replies []dialog
+	var dialogs []dialog
 	for _, inReplyToRawTweet := range inReplyToRawTweets {
 		inReplyTo := newTweet(&inReplyToRawTweet)
 		if inReplyTo.text != "" {
 			t := tweetsByInReplyToStatusID[inReplyToRawTweet.ID]
 			d := dialog{tweets: []tweet{t, inReplyTo}}
-			replies = append(replies, d)
+			dialogs = append(dialogs, d)
 		}
 	}
-	return replies
+	return dialogs
 }
 
-func (s *tweetStream) processDialogs(ctx context.Context) {
+func (s *stream) processDialogs(ctx context.Context) {
 	defer close(s.dialogs)
 
 	resetTicker := time.NewTicker(statusLookupResetDuration)
@@ -106,7 +66,7 @@ func (s *tweetStream) processDialogs(ctx context.Context) {
 		case <-resetTicker.C:
 			statusLookupCallCount = 0
 			log.Println("reset status lookup API limitation")
-		case t := <-s.tweetsForDialogs:
+		case t := <-s.dialogTweets:
 			tweets = append(tweets, t)
 			if len(tweets) < statusLookupMaxTweetCount {
 				continue
@@ -147,7 +107,7 @@ func (s *tweetStream) processDialogs(ctx context.Context) {
 	}
 }
 
-func (s *tweetStream) processTweets(ctx context.Context) {
+func (s *stream) processTweets(ctx context.Context) {
 	defer close(s.dialogs)
 
 	for {
@@ -162,11 +122,11 @@ func (s *tweetStream) processTweets(ctx context.Context) {
 				}
 
 				s.tweets <- t
-				if t.inReplyToStatusID > 0 {
+				if t.hasInReplyTo() {
 					select {
-					case s.tweetsForDialogs <- t:
+					case s.dialogTweets <- t:
 					default:
-						log.Println("tweetsForDialogs channel is full")
+						log.Println("dialogTweets channel is full")
 					}
 				}
 			} else if err := m.(error); ok {
@@ -178,22 +138,22 @@ func (s *tweetStream) processTweets(ctx context.Context) {
 	}
 }
 
-func newTweetStream(ctx context.Context, language, consumeKey, consumeKeySecret, accessToken, accessTokenSecret string) (*tweetStream, error) {
+func newStream(ctx context.Context, language, consumeKey, consumeKeySecret, accessToken, accessTokenSecret string) (*stream, error) {
 	config := oauth1.NewConfig(consumeKey, consumeKeySecret)
 	token := oauth1.NewToken(accessToken, accessTokenSecret)
 	httpClient := config.Client(oauth1.NoContext, token)
 	client := twitter.NewClient(httpClient)
 
 	streamParams := &twitter.StreamSampleParams{StallWarnings: twitter.Bool(true), Language: []string{language}}
-	stream, err := client.Streams.Sample(streamParams)
+	rawStream, err := client.Streams.Sample(streamParams)
 	if err != nil {
 		return nil, err
 	}
 
-	s := &tweetStream{
-		stream:           stream,
-		client:           client,
-		tweetsForDialogs: make(chan tweet, 1000),
+	s := &stream{
+		stream:       rawStream,
+		client:       client,
+		dialogTweets: make(chan tweet, 1000),
 
 		dialogs: make(chan dialog),
 		tweets:  make(chan tweet),
