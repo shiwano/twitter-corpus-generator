@@ -88,10 +88,9 @@ func (s *tweetStream) processReplies(ctx context.Context) {
 			replyTweets = append(replyTweets, t)
 
 			if len(replyTweets) == statusLookupMaxTweetCount {
-				replyTweets = replyTweets[:0]
-
 				if statusLookupCallCount < statusLookupMaxCallCount {
 					replies := s.makeReplies(replyTweets)
+					replyTweets = replyTweets[:0]
 
 					for _, r := range replies {
 						s.tweets <- r.inReplyTo
@@ -105,6 +104,8 @@ func (s *tweetStream) processReplies(ctx context.Context) {
 					}
 					statusLookupCallCount++
 					log.Println("call status lookup API", statusLookupCallCount)
+				} else {
+					replyTweets = replyTweets[:0]
 				}
 			}
 		}
