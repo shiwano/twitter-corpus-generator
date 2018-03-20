@@ -21,6 +21,7 @@ type reply struct {
 
 type tweet struct {
 	id                int64
+	userID            int64
 	text              string
 	inReplyToStatusID int64
 }
@@ -28,6 +29,7 @@ type tweet struct {
 func newTweet(t *twitter.Tweet) tweet {
 	return tweet{
 		id:                t.ID,
+		userID:            t.User.ID,
 		text:              normalizeText(t.Text),
 		inReplyToStatusID: t.InReplyToStatusID,
 	}
@@ -94,7 +96,9 @@ func (s *tweetStream) processReplies(ctx context.Context) {
 					replies := s.makeReplies(replyTweets)
 					for _, r := range replies {
 						s.tweets <- r.inReplyTo
-						s.replies <- r
+						if r.tweet.userID != r.inReplyTo.userID {
+							s.replies <- r
+						}
 					}
 					statusLookupCallCount++
 					log.Println("call status lookup API", statusLookupCallCount)
