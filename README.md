@@ -1,6 +1,6 @@
 # twitter-corpus-generator
 
-Twitter corpus generator written in Go, it generates sample streaming tweets and in-reply-to tweets data with automatic file rotation.
+> :bird: twitter-corpus-generator saves sample tweets and dialog tweets from Twitter, and rotates automatically output files based on [lumberjack](https://github.com/natefinch/lumberjack)'s logic.
 
 ## Getting Started
 

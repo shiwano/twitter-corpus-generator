@@ -15,8 +15,8 @@ type config struct {
 
 	Language string `toml:"language"`
 
-	TweetFile fileConfig `toml:"tweet_file"`
-	ReplyFile fileConfig `toml:"reply_file"`
+	TweetFile  fileConfig `toml:"tweet_file"`
+	DialogFile fileConfig `toml:"dialog_file"`
 }
 
 func loadConfig(path string) (*config, error) {

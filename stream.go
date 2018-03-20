@@ -14,9 +14,28 @@ const statusLookupMaxTweetCount = 100
 const statusLookupMaxCallCount = 60
 const statusLookupResetDuration = 16 * time.Minute
 
-type reply struct {
-	tweet     tweet
-	inReplyTo tweet
+type dialog struct {
+	tweets []tweet // order by tweeted at.
+}
+
+func (d *dialog) isFinished() bool {
+	return d.lastTweet().inReplyToStatusID <= 0
+}
+
+func (d *dialog) firstTweet() tweet {
+	return d.tweets[0]
+}
+
+func (d *dialog) lastTweet() tweet {
+	return d.tweets[len(d.tweets)-1]
+}
+
+func (d *dialog) countUserIDs() int {
+	userIDs := make(map[int64]struct{})
+	for _, t := range d.tweets {
+		userIDs[t.userID] = struct{}{}
+	}
+	return len(userIDs)
 }
 
 type tweet struct {
@@ -38,13 +57,13 @@ func newTweet(t *twitter.Tweet) tweet {
 type tweetStream struct {
 	stream           *twitter.Stream
 	client           *twitter.Client
-	tweetsForReplies chan tweet
+	tweetsForDialogs chan tweet
 
-	replies chan reply
+	dialogs chan dialog
 	tweets  chan tweet
 }
 
-func (s *tweetStream) makeReplies(tweets []tweet) []reply {
+func (s *tweetStream) makeDialogs(tweets []tweet) []dialog {
 	tweetsByInReplyToStatusID := make(map[int64]tweet)
 	inReplyToStatusIDs := make([]int64, len(tweets))
 	for i, t := range tweets {
@@ -57,25 +76,28 @@ func (s *tweetStream) makeReplies(tweets []tweet) []reply {
 		log.Println(err)
 		return nil
 	}
-	var replies []reply
+	var replies []dialog
 	for _, inReplyToRawTweet := range inReplyToRawTweets {
 		inReplyTo := newTweet(&inReplyToRawTweet)
 		if inReplyTo.text != "" {
 			t := tweetsByInReplyToStatusID[inReplyToRawTweet.ID]
-			replies = append(replies, reply{tweet: t, inReplyTo: inReplyTo})
+			d := dialog{tweets: []tweet{t, inReplyTo}}
+			replies = append(replies, d)
 		}
 	}
 	return replies
 }
 
-func (s *tweetStream) processReplies(ctx context.Context) {
-	defer close(s.replies)
+func (s *tweetStream) processDialogs(ctx context.Context) {
+	defer close(s.dialogs)
 
 	resetTicker := time.NewTicker(statusLookupResetDuration)
 	defer resetTicker.Stop()
 
 	statusLookupCallCount := 0
-	replyTweets := make([]tweet, 0, statusLookupMaxTweetCount)
+	tweets := make([]tweet, 0, statusLookupMaxTweetCount)
+	dialogs := make([]dialog, 0, statusLookupMaxTweetCount)
+	unfinishedDialogs := make([]dialog, 0, statusLookupMaxTweetCount)
 
 	for {
 		select {
@@ -84,36 +106,49 @@ func (s *tweetStream) processReplies(ctx context.Context) {
 		case <-resetTicker.C:
 			statusLookupCallCount = 0
 			log.Println("reset status lookup API limitation")
-		case t := <-s.tweetsForReplies:
-			replyTweets = append(replyTweets, t)
+		case t := <-s.tweetsForDialogs:
+			tweets = append(tweets, t)
+			if len(tweets) < statusLookupMaxTweetCount {
+				continue
+			}
 
-			if len(replyTweets) == statusLookupMaxTweetCount {
-				if statusLookupCallCount < statusLookupMaxCallCount {
-					replies := s.makeReplies(replyTweets)
-					replyTweets = replyTweets[:0]
+			if statusLookupCallCount < statusLookupMaxCallCount {
+				replyDialogs := s.makeDialogs(tweets[:statusLookupMaxTweetCount])
+				tweets = tweets[:0]
+				unfinishedDialogs = unfinishedDialogs[:0]
 
-					for _, r := range replies {
-						s.tweets <- r.inReplyTo
-						if r.tweet.userID != r.inReplyTo.userID {
-							s.replies <- r
-						}
-
-						if r.inReplyTo.inReplyToStatusID > 0 {
-							replyTweets = append(replyTweets, r.inReplyTo)
+				for _, d := range replyDialogs {
+					s.tweets <- d.lastTweet()
+					for _, dlg := range dialogs {
+						for _, t := range dlg.tweets {
+							if t.id == d.firstTweet().id {
+								dlg.tweets = append(dlg.tweets, d.lastTweet())
+								d = dlg
+							}
 						}
 					}
-					statusLookupCallCount++
-					log.Println("call status lookup API", statusLookupCallCount)
-				} else {
-					replyTweets = replyTweets[:0]
+					if d.countUserIDs() != 2 {
+						continue
+					}
+					if d.isFinished() {
+						s.dialogs <- d
+					} else {
+						tweets = append(tweets, d.lastTweet())
+						unfinishedDialogs = append(unfinishedDialogs, d)
+					}
 				}
+				dialogs = append(dialogs[:0], unfinishedDialogs...)
+				statusLookupCallCount++
+				log.Println("call status lookup API", statusLookupCallCount)
+			} else {
+				tweets = tweets[:0]
 			}
 		}
 	}
 }
 
 func (s *tweetStream) processTweets(ctx context.Context) {
-	defer close(s.replies)
+	defer close(s.dialogs)
 
 	for {
 		select {
@@ -129,9 +164,9 @@ func (s *tweetStream) processTweets(ctx context.Context) {
 				s.tweets <- t
 				if t.inReplyToStatusID > 0 {
 					select {
-					case s.tweetsForReplies <- t:
+					case s.tweetsForDialogs <- t:
 					default:
-						log.Println("tweetsForReplies channel is full")
+						log.Println("tweetsForDialogs channel is full")
 					}
 				}
 			} else if err := m.(error); ok {
@@ -158,12 +193,12 @@ func newTweetStream(ctx context.Context, language, consumeKey, consumeKeySecret,
 	s := &tweetStream{
 		stream:           stream,
 		client:           client,
-		tweetsForReplies: make(chan tweet, 1000),
+		tweetsForDialogs: make(chan tweet, 1000),
 
-		replies: make(chan reply),
+		dialogs: make(chan dialog),
 		tweets:  make(chan tweet),
 	}
 	go s.processTweets(ctx)
-	go s.processReplies(ctx)
+	go s.processDialogs(ctx)
 	return s, nil
 }

@@ -9,6 +9,6 @@ language = "ja"
 path = "./data/tweets/tweets.txt"
 max_size = 1000 # megabytes
 
-[reply_file]
-path = "./data/replies/replies.txt"
+[dialog_file]
+path = "./data/dialogs/dialogs.txt"
 max_size = 1000 # megabytes

@@ -31,7 +31,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	writer := newTweetWriter(c.TweetFile, c.ReplyFile)
+	writer := newTweetWriter(c.TweetFile, c.DialogFile)
 
 	stream, err := newTweetStream(context.Background(), c.Language, c.ConsumeKey, c.ConsumeKeySecret, c.AccessToken, c.AccessTokenSecret)
 	if err != nil {
@@ -39,12 +39,13 @@ func main() {
 	}
 
 	go func() {
-		for reply := range stream.replies {
-			if verboseFlag {
-				log.Println("Reply1: ", reply.inReplyTo.text)
-				log.Println("Reply2: ", reply.tweet.text)
+		for d := range stream.dialogs {
+			if len(d.tweets) >= 3 {
+				for i := 0; i < len(d.tweets); i++ {
+					log.Printf("Dialog%d: %s", i, d.tweets[len(d.tweets)-(i+1)].text)
+				}
 			}
-			writer.writeReply(reply)
+			writer.writeDialog(d)
 		}
 	}()
 
