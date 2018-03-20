@@ -71,12 +71,11 @@ func (s *tweetStream) makeReplies(tweets []tweet) []reply {
 func (s *tweetStream) processReplies(ctx context.Context) {
 	defer close(s.replies)
 
-	statusLookupCallCount := 0
-	replyTweets := make([]tweet, statusLookupMaxTweetCount)
-	replyTweetsCount := 0
-
 	resetTicker := time.NewTicker(statusLookupResetDuration)
 	defer resetTicker.Stop()
+
+	statusLookupCallCount := 0
+	replyTweets := make([]tweet, 0, statusLookupMaxTweetCount)
 
 	for {
 		select {
@@ -86,18 +85,22 @@ func (s *tweetStream) processReplies(ctx context.Context) {
 			statusLookupCallCount = 0
 			log.Println("reset status lookup API limitation")
 		case t := <-s.tweetsForReplies:
-			replyTweets[replyTweetsCount] = t
-			replyTweetsCount++
+			replyTweets = append(replyTweets, t)
 
-			if replyTweetsCount == len(replyTweets) {
-				replyTweetsCount = 0
+			if len(replyTweets) == statusLookupMaxTweetCount {
+				replyTweets = replyTweets[:0]
 
 				if statusLookupCallCount < statusLookupMaxCallCount {
 					replies := s.makeReplies(replyTweets)
+
 					for _, r := range replies {
 						s.tweets <- r.inReplyTo
 						if r.tweet.userID != r.inReplyTo.userID {
 							s.replies <- r
+						}
+
+						if r.inReplyTo.inReplyToStatusID > 0 {
+							replyTweets = append(replyTweets, r.inReplyTo)
 						}
 					}
 					statusLookupCallCount++
